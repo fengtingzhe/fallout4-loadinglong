@@ -36,7 +36,6 @@ NEXUS_MOD_IDS = {
 # 已知的 Fallout 4 版本与对应 F4SE 版本映射
 KNOWN_FO4_VERSIONS = {
     "1.11.221": "0.7.8",   # Next-gen update (2024) - F4SE 0.7.8
-    "1.11.191": "0.6.23",  # Pre-next-gen
     "1.10.984": "0.7.2",   # Pre-next-gen (second latest)
     "1.10.163": "0.6.23",  # Older
     "1.10.162": "0.6.21",
@@ -580,6 +579,18 @@ def fetch_nexus_mod_info(mod_id: int) -> dict:
                 if m:
                     result["version"] = m.group(1)
 
+        # 格式 6: 纯文本兜底 — 用 soup.get_text("\n") 获取纯文本
+        # 匹配 "Version\n1.1.2" 或 "Version  1.1.2" 等模式
+        if not result["version"]:
+            plain = soup.get_text("\n")
+            # 在纯文本中搜索 Version 后紧跟的版本号
+            m = re.search(
+                r'Version\s*[\n\r\s]+\s*(\d+\.\d+(?:\.\d+)?)',
+                plain, re.IGNORECASE
+            )
+            if m:
+                result["version"] = m.group(1).strip()
+
         # 提取 Mod 名称
         title_tag = soup.find("title")
         if title_tag:
@@ -628,7 +639,7 @@ def get_known_latest() -> dict:
             "source": "local",
         },
         "long_loading_fix": {
-            "version": "1.2.0",     # 请根据实际最新版本更新
+            "version": "1.1.2",     # 请根据实际最新版本更新
             "mod_id": NEXUS_MOD_IDS["long_loading_fix"],
             "source": "local",
         },
@@ -680,7 +691,7 @@ def api_scan():
     # 3. f4se_*.dll
     results.append(scan_f4se_dll(game_path, game_version))
 
-    # 4. f4se_steam_loader.dll
+    # 4. f4se_steam_loader.dll（非必需）
     steam_loader = os.path.join(game_path, "f4se_steam_loader.dll")
     results.append({
         "id": "f4se_steam_loader",
@@ -690,8 +701,9 @@ def api_scan():
         "exists": os.path.isfile(steam_loader),
         "current_version": None,
         "expected_version": None,
-        "status": "ok" if os.path.isfile(steam_loader) else "missing",
-        "note": "" if os.path.isfile(steam_loader) else "⚠ 非必需文件缺失",
+        "required": False,
+        "status": "ok" if os.path.isfile(steam_loader) else "warning",
+        "note": "" if os.path.isfile(steam_loader) else "⚠ 非必需文件缺失（Steam 版通常不需要）",
     })
 
     # 5. Address Library

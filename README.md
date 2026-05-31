@@ -101,7 +101,7 @@ fallout4-loadinglong/
       "method": "html_scrape"
     },
     "long_loading_fix": {
-      "version": "1.2.0",
+      "version": "1.1.2",
       "method": "html_scrape"
     }
   },

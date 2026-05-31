@@ -712,10 +712,11 @@ if __name__ == "__main__":
         except ValueError:
             pass
 
+    # Use ASCII-safe banner (avoids encoding issues in Windows CMD)
     print("=" * 60)
-    print("  Fallout 4 加载优化 MOD 检测工具 — 后端服务")
-    print(f"  地址: http://127.0.0.1:{port}")
-    print(f"  按 Ctrl+C 停止服务")
+    print("  Fallout 4 Loading Optimizer - Backend Server")
+    print(f"  URL: http://127.0.0.1:{port}")
+    print(f"  Press Ctrl+C to stop")
     print("=" * 60)
 
     app.run(host="127.0.0.1", port=port, debug=False)

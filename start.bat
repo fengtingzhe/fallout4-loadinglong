@@ -1,105 +1,97 @@
-@echo off
-title Fallout 4 加载优化 MOD 检测工具
+﻿@echo off
+title Fallout 4 Loading Optimizer Check Tool
 setlocal enabledelayedexpansion
 
-:: ============================================================
-::  Fallout 4 Loading Times Fix Detection Tool — 启动脚本
-::  功能: 安装依赖 → 启动后端 → 打开浏览器
-:: ============================================================
+rem ============================================================
+rem  Fallout 4 Loading Times Fix Detection Tool
+rem  Step 1: Check Python  Step 2: Install deps  Step 3: Start
+rem ============================================================
 
-:: 第一步：切换到脚本所在目录
+rem Switch to script directory FIRST
 cd /d "%~dp0"
 
-:: 设置控制台编码为 UTF-8 (65001)
-chcp 65001 >nul 2>nul
+rem Switch console to UTF-8 (must be before any Chinese output)
+chcp 65001 > nul 2> nul
 
 echo.
-echo ╔══════════════════════════════════════════════════════════╗
-echo ║   Fallout 4 加载优化 MOD 检测工具                        ║
-echo ╚══════════════════════════════════════════════════════════╝
+echo ================================================================
+echo    Fallout 4 MOD Detection Tool
+echo ================================================================
 echo.
 
-:: ============================================================
-:: 检查 Python
-:: ============================================================
-echo [1/3] 检查 Python 环境...
-python --version >nul 2>nul
+rem ============================================================
+rem  Step 1: Check Python
+rem ============================================================
+echo [1/3] Checking Python...
+python --version > nul 2> nul
 if %errorlevel% neq 0 (
-    echo [错误] 未找到 Python！
-    echo.
-    echo 请安装 Python 3.8+ 并确保勾选 "Add Python to PATH"。
-    echo 下载地址: https://www.python.org/downloads/
+    echo [ERROR] Python not found!
+    echo Please install Python 3.8+ and check "Add Python to PATH"
+    echo Download: https://www.python.org/downloads/
     echo.
     pause
     exit /b 1
 )
-
-:: 显示 Python 版本
 for /f "tokens=*" %%i in ('python --version 2^>^&1') do echo   %%i
 
-:: 检查 pip
-pip --version >nul 2>nul
+pip --version > nul 2> nul
 if %errorlevel% neq 0 (
-    echo [警告] pip 未找到，尝试使用 python -m pip...
+    echo [WARN] pip not found, using python -m pip...
     set PIP_CMD=python -m pip
 ) else (
     set PIP_CMD=pip
 )
-echo   pip 已就绪
+echo   pip ready
 
-:: ============================================================
-:: 安装依赖
-:: ============================================================
+rem ============================================================
+rem  Step 2: Install dependencies
+rem ============================================================
 echo.
-echo [2/3] 检查 Python 依赖包...
+echo [2/3] Checking dependencies...
 
-:: 先尝试 import flask 看是否已安装
-python -c "import flask, requests, bs4" 2>nul
+python -c "import flask, requests, bs4" 2> nul
 if %errorlevel% neq 0 (
-    echo   正在安装依赖 (flask, requests, beautifulsoup4)...
+    echo   Installing dependencies (flask, requests, beautifulsoup4)...
     !PIP_CMD! install -r "requirements.txt" --no-warn-script-location
     if !errorlevel! neq 0 (
         echo.
-        echo [错误] 依赖安装失败！请检查网络连接后重试。
-        echo 也可以手动执行: pip install -r requirements.txt
+        echo [ERROR] Dependency install failed! Check network and retry.
+        echo You can also run: pip install -r requirements.txt
         echo.
         pause
         exit /b 1
     )
-    echo   依赖安装完成！
+    echo   Done!
 ) else (
-    echo   依赖已就绪 (flask, requests, beautifulsoup4)
+    echo   Dependencies OK (flask, requests, beautifulsoup4)
 )
 
-:: ============================================================
-:: 启动服务
-:: ============================================================
+rem ============================================================
+rem  Step 3: Start server
+rem ============================================================
 set PORT=5080
 
 echo.
-echo ════════════════════════════════════════════════════════════
-echo   [3/3] 启动后端服务...
+echo ================================================================
+echo   [3/3] Starting backend server...
 echo.
-echo   地址: http://127.0.0.1:%PORT%
+echo   URL: http://127.0.0.1:%PORT%
 echo.
-echo   浏览器将自动打开。如未打开，请手动访问上述地址。
-echo   按 Ctrl+C 停止服务，或直接关闭此窗口。
-echo ════════════════════════════════════════════════════════════
+echo   Browser will open automatically.
+echo   Press Ctrl+C to stop, or close this window.
+echo ================================================================
 echo.
 
-:: 启动浏览器（异步，延迟 2 秒等待服务器就绪）
-:: ping -n 3 发送 3 个包，间隔约 2 秒，用作跨版本兼容的延迟
+rem Open browser after 2-second delay (ping -n 3 = ~2s)
 start "" cmd /c "ping 127.0.0.1 -n 3 > nul && start http://127.0.0.1:%PORT%"
 
-:: 启动 Flask 后端（前台运行，按 Ctrl+C 停止）
+rem Start Flask server (runs in foreground)
 python server.py %PORT%
 
-:: ============================================================
-:: 服务结束
-:: ============================================================
+rem ============================================================
 echo.
-echo ════════════════════════════════════════════════════════════
-echo   服务已停止。
-echo ════════════════════════════════════════════════════════════
+echo ================================================================
+echo   Server stopped.
+echo ================================================================
 echo.
 pause

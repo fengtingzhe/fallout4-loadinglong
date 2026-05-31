@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fallout 4 加载优化 MOD 检测工具</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --bg-card: #16213e;
+    --bg-card2: #0f3460;
+    --accent: #e94560;
+    --accent2: #00b894;
+    --text: #e0e0e0;
+    --text-dim: #a0a0a0;
+    --border: #2a2a4a;
+    --ok: #00b894;
+    --ok-bg: rgba(0, 184, 148, 0.12);
+    --warn: #fdcb6e;
+    --warn-bg: rgba(253, 203, 110, 0.12);
+    --err: #e94560;
+    --err-bg: rgba(233, 69, 96, 0.12);
+    --missing: #636e72;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #0a0a1a 0%, #16213e 100%);
+    border-bottom: 2px solid var(--accent);
+    padding: 24px 32px;
+    text-align: center;
+  }
+  .header h1 {
+    font-size: 1.8em;
+    color: #fff;
+    letter-spacing: 2px;
+  }
+  .header h1 .icon { color: var(--accent); }
+  .header p {
+    color: var(--text-dim);
+    margin-top: 6px;
+    font-size: 0.9em;
+  }
+
+  /* Main */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 20px;
+  }
+
+  /* Control Bar */
+  .control-bar {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  .control-bar label {
+    font-weight: 600;
+    font-size: 0.9em;
+    white-space: nowrap;
+  }
+  .control-bar input[type="text"] {
+    flex: 1;
+    min-width: 280px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #0a0a1a;
+    color: var(--text);
+    font-size: 0.95em;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .control-bar input[type="text"]:focus {
+    border-color: var(--accent);
+  }
+  .btn {
+    padding: 10px 22px;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.95em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .btn-scan {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-scan:hover { background: #c0392b; transform: translateY(-1px); }
+  .btn-scan:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+  .btn-browse {
+    background: var(--bg-card2);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-browse:hover { background: #1a4a80; }
+
+  /* Loading */
+  .loading {
+    display: none;
+    text-align: center;
+    padding: 40px;
+  }
+  .loading.active { display: block; }
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Summary */
+  .summary {
+    display: none;
+    padding: 18px 24px;
+    border-radius: 10px;
+    margin-bottom: 24px;
+    font-weight: 600;
+    font-size: 1.05em;
+    line-height: 1.6;
+  }
+  .summary.active { display: block; }
+  .summary.ok { background: var(--ok-bg); border: 1px solid var(--ok); color: var(--ok); }
+  .summary.warn { background: var(--warn-bg); border: 1px solid var(--warn); color: var(--warn); }
+  .summary.err { background: var(--err-bg); border: 1px solid var(--err); color: var(--err); }
+
+  .stats-bar {
+    display: none;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .stats-bar.active { display: flex; }
+  .stat-chip {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.85em;
+    font-weight: 600;
+  }
+  .stat-chip.ok { background: var(--ok-bg); color: var(--ok); }
+  .stat-chip.warn { background: var(--warn-bg); color: var(--warn); }
+  .stat-chip.err { background: var(--err-bg); color: var(--err); }
+
+  /* Table */
+  .table-wrap {
+    display: none;
+    overflow-x: auto;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+  .table-wrap.active { display: block; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+  }
+  thead {
+    background: var(--bg-card2);
+  }
+  th {
+    padding: 12px 16px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    border-bottom: 2px solid var(--border);
+  }
+  td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  tbody tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  /* Status Badges */
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: 700;
+  }
+  .badge-ok { background: var(--ok-bg); color: var(--ok); }
+  .badge-missing { background: var(--err-bg); color: var(--err); }
+  .badge-mismatch { background: var(--err-bg); color: var(--err); }
+  .badge-warning { background: var(--warn-bg); color: var(--warn); }
+
+  .exists-yes { color: var(--ok); font-weight: 700; }
+  .exists-no { color: var(--err); font-weight: 700; }
+
+  .ver-current { font-family: 'Consolas', 'Courier New', monospace; }
+  .ver-match { color: var(--ok); }
+  .ver-mismatch { color: var(--err); }
+
+  /* Remote Section */
+  .remote-section {
+    display: none;
+    margin-top: 24px;
+  }
+  .remote-section.active { display: block; }
+
+  .remote-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 24px;
+    margin-bottom: 12px;
+  }
+  .remote-card h3 {
+    font-size: 0.95em;
+    color: var(--accent2);
+    margin-bottom: 8px;
+  }
+  .remote-card .info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 0.85em;
+    color: var(--text-dim);
+  }
+  .remote-card .info-row span:last-child {
+    color: var(--text);
+  }
+
+  /* Error */
+  .error-msg {
+    display: none;
+    background: var(--err-bg);
+    border: 1px solid var(--err);
+    color: var(--err);
+    padding: 14px 20px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+  .error-msg.active { display: block; }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-dim);
+    font-size: 0.78em;
+    margin-top: 32px;
+    border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span class="icon">⚡</span> Fallout 4 加载优化 MOD 检测工具</h1>
+  <p>自动扫描游戏目录 · 检测关键文件 · 比对版本 · 获取最新支持信息</p>
+</div>
+
+<div class="container">
+
+  <!-- 控制栏 -->
+  <div class="control-bar">
+    <label for="game-path">🎮 游戏路径:</label>
+    <input type="text" id="game-path"
+           placeholder="例如 D:\Steam\steamapps\common\Fallout 4"
+           autocomplete="off">
+    <button class="btn btn-browse" onclick="browsePath()">📁 浏览</button>
+    <button class="btn btn-scan" id="btn-scan" onclick="startScan()">🔍 开始检测</button>
+  </div>
+
+  <!-- 快捷路径 -->
+  <div style="margin-bottom:20px;font-size:0.82em;color:var(--text-dim)">
+    常见路径:
+    <a href="#" onclick="quickPath('D:\\Steam\\steamapps\\common\\Fallout 4')" style="color:var(--accent2);margin:0 6px">Steam 默认</a>
+    <a href="#" onclick="quickPath('C:\\Program Files (x86)\\Steam\\steamapps\\common\\Fallout 4')" style="color:var(--accent2);margin:0 6px">Steam (C盘)</a>
+    <a href="#" onclick="quickPath('D:\\Games\\Fallout 4')" style="color:var(--accent2);margin:0 6px">自定义</a>
+  </div>
+
+  <!-- 错误消息 -->
+  <div id="error-msg" class="error-msg"></div>
+
+  <!-- 加载动画 -->
+  <div id="loading" class="loading">
+    <div class="spinner"></div>
+    <p>正在扫描文件并获取远程版本信息...</p>
+  </div>
+
+  <!-- 统计条 -->
+  <div id="stats-bar" class="stats-bar"></div>
+
+  <!-- 摘要 -->
+  <div id="summary" class="summary"></div>
+
+  <!-- 结果表格 -->
+  <div id="table-wrap" class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>类别</th>
+          <th>文件名</th>
+          <th>存在</th>
+          <th>当前版本</th>
+          <th>期望版本</th>
+          <th>状态</th>
+          <th>说明</th>
+        </tr>
+      </thead>
+      <tbody id="results-tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- 远程版本信息 -->
+  <div id="remote-section" class="remote-section">
+    <h2 style="margin-bottom:14px;font-size:1.1em">🌐 最新支持版本参考</h2>
+    <div id="remote-content"></div>
+  </div>
+
+</div>
+
+<div class="footer">
+  Fallout 4 Loading Times Fix Detection Tool · 仅检测，不修改游戏文件 · 离线/本地运行
+</div>
+
+<!-- Hidden file input for folder browsing -->
+<input type="file" id="folder-input" webkitdirectory directory style="display:none"
+       onchange="onFolderSelected(event)">
+
+<script>
+// ============================================================
+// 前端逻辑
+// ============================================================
+
+const API_BASE = window.location.origin;
+
+/** 快速路径填充 */
+function quickPath(p) {
+  document.getElementById('game-path').value = p;
+}
+
+/** 使用文件夹选择（通过 file input + webkitdirectory） */
+function browsePath() {
+  const inp = document.getElementById('folder-input');
+  inp.value = '';
+  inp.click();
+}
+
+function onFolderSelected(event) {
+  const files = event.target.files;
+  if (files && files.length > 0) {
+    // 从第一个文件的 webkitRelativePath 提取根目录
+    const relPath = files[0].webkitRelativePath || files[0].name;
+    // 我们只需要目录路径 — 但浏览器不会直接给完整路径
+    // 作为替代，尝试让用户使用拖拽或手动输入
+    alert('提示: 由于浏览器安全限制，无法直接获取文件夹完整路径。\n\n请在输入框中手动输入或粘贴游戏路径，或将文件夹拖拽到输入框。');
+  }
+}
+
+/** 允许拖拽文件夹到输入框 */
+document.addEventListener('DOMContentLoaded', () => {
+  const pathInput = document.getElementById('game-path');
+
+  pathInput.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  pathInput.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const items = e.dataTransfer.items;
+    if (items && items.length > 0) {
+      // 尝试从拖拽的文件获取路径
+      const item = items[0];
+      if (item.kind === 'file') {
+        const entry = item.webkitGetAsEntry();
+        if (entry) {
+          pathInput.value = entry.fullPath || '';
+        }
+      }
+    }
+  });
+
+  // 回车触发检测
+  pathInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') startScan();
+  });
+
+  // 尝试从 localStorage 恢复上次路径
+  const saved = localStorage.getItem('fo4_game_path');
+  if (saved) pathInput.value = saved;
+});
+
+/** 开始扫描 */
+async function startScan() {
+  const path = document.getElementById('game-path').value.trim();
+  if (!path) {
+    showError('请先输入或选择 Fallout 4 游戏根目录路径');
+    return;
+  }
+
+  // 保存路径
+  localStorage.setItem('fo4_game_path', path);
+
+  // 重置 UI
+  hideAll();
+  document.getElementById('loading').classList.add('active');
+  document.getElementById('btn-scan').disabled = true;
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/scan?path=${encodeURIComponent(path)}&fetch_remote=true`);
+    const data = await resp.json();
+
+    document.getElementById('loading').classList.remove('active');
+    document.getElementById('btn-scan').disabled = false;
+
+    if (!data.success) {
+      showError(data.error || '扫描失败');
+      return;
+    }
+
+    renderResults(data);
+
+  } catch (err) {
+    document.getElementById('loading').classList.remove('active');
+    document.getElementById('btn-scan').disabled = false;
+    showError(`无法连接到后端服务 (${API_BASE})。请确认 start.bat 已启动。错误: ${err.message}`);
+  }
+}
+
+/** 渲染结果 */
+function renderResults(data) {
+  const { results, summary, recommendation, stats, remote, game_version } = data;
+
+  // 统计条
+  const statsBar = document.getElementById('stats-bar');
+  statsBar.innerHTML = `
+    <span>🎮 游戏版本: <strong>${game_version || '未知'}</strong></span>
+    <span class="stat-chip ok">✅ ${stats.ok} 正常</span>
+    ${stats.missing > 0 ? `<span class="stat-chip err">❌ ${stats.missing} 缺失</span>` : ''}
+    ${stats.mismatch > 0 ? `<span class="stat-chip err">⚠ ${stats.mismatch} 不匹配</span>` : ''}
+    ${stats.warning > 0 ? `<span class="stat-chip warn">⚠ ${stats.warning} 警告</span>` : ''}
+  `;
+  statsBar.classList.add('active');
+
+  // 摘要
+  const summaryEl = document.getElementById('summary');
+  let summaryClass = 'ok';
+  if (stats.missing > 0 || stats.mismatch > 0) summaryClass = 'err';
+  else if (stats.warning > 0) summaryClass = 'warn';
+
+  summaryEl.className = `summary active ${summaryClass}`;
+  summaryEl.innerHTML = `
+    <div style="font-size:1.1em">${summary}</div>
+    <div style="font-size:0.9em;margin-top:6px;opacity:0.85">${recommendation}</div>
+  `;
+
+  // 表格
+  const tbody = document.getElementById('results-tbody');
+  tbody.innerHTML = '';
+
+  for (const r of results) {
+    const statusLabel = {
+      'ok': '✅ 正确',
+      'missing': '❌ 缺失',
+      'mismatch': '⚠ 不匹配',
+      'warning': '⚠ 警告',
+    }[r.status] || r.status;
+
+    const statusBadgeClass = {
+      'ok': 'badge-ok',
+      'missing': 'badge-missing',
+      'mismatch': 'badge-mismatch',
+      'warning': 'badge-warning',
+    }[r.status] || '';
+
+    const existsClass = r.exists ? 'exists-yes' : 'exists-no';
+    const existsLabel = r.exists ? '✔ 存在' : '✘ 缺失';
+
+    // 版本比较显示
+    let currentVerHtml = r.current_version
+      ? `<span class="ver-current">${r.current_version}</span>`
+      : '<span style="color:var(--text-dim)">—</span>';
+
+    let expectedVerHtml = r.expected_version
+      ? `<span class="ver-current">${r.expected_version}</span>`
+      : '<span style="color:var(--text-dim)">—</span>';
+
+    // 如果有找到的文件列表
+    let foundInfo = '';
+    if (r.found_files && r.found_files.length > 0) {
+      foundInfo = `<br><small style="color:var(--text-dim)">文件: ${r.found_files.join(', ')}</small>`;
+    }
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${r.category}</td>
+      <td><strong>${r.name}</strong>${foundInfo}</td>
+      <td><span class="${existsClass}">${existsLabel}</span></td>
+      <td>${currentVerHtml}</td>
+      <td>${expectedVerHtml}</td>
+      <td><span class="badge ${statusBadgeClass}">${statusLabel}</span></td>
+      <td style="font-size:0.85em">${r.note || ''}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  document.getElementById('table-wrap').classList.add('active');
+
+  // 远程版本
+  renderRemote(remote, game_version);
+}
+
+/** 渲染远程版本信息 */
+function renderRemote(remote, gameVersion) {
+  const section = document.getElementById('remote-section');
+  const content = document.getElementById('remote-content');
+  let html = '';
+
+  // F4SE
+  const f4se = remote.f4se || {};
+  html += `
+    <div class="remote-card">
+      <h3>🔧 F4SE (Fallout 4 Script Extender)</h3>
+      <div class="info-row"><span>数据来源</span><span>${f4se.source || '—'}</span></div>
+      <div class="info-row"><span>最新版本</span><span style="color:var(--accent2)">${f4se.f4se_version || '获取失败'}</span></div>
+      <div class="info-row"><span>支持游戏版本</span><span>${(f4se.supported_game_versions || []).join(', ') || '—'}</span></div>
+      ${f4se.error ? `<div class="info-row"><span>错误</span><span style="color:var(--err)">${f4se.error}</span></div>` : ''}
+    </div>
+  `;
+
+  // Address Library
+  const addrLib = remote.address_library || {};
+  html += `
+    <div class="remote-card">
+      <h3>📚 Address Library for F4SE Plugins</h3>
+      <div class="info-row"><span>Nexus 页面</span><span><a href="https://www.nexusmods.com/fallout4/mods/47327" target="_blank" style="color:var(--accent2)">Nexus Mods #47327</a></span></div>
+      <div class="info-row"><span>最新版本</span><span style="color:var(--accent2)">${addrLib.version || '需 Nexus API Key'}</span></div>
+      ${addrLib.error ? `<div class="info-row"><span>提示</span><span>${addrLib.error}</span></div>` : ''}
+    </div>
+  `;
+
+  // Long Loading Times Fix
+  const llFix = remote.long_loading_fix || {};
+  html += `
+    <div class="remote-card">
+      <h3>⏱ Long Loading Times Fix</h3>
+      <div class="info-row"><span>Nexus 页面</span><span><a href="https://www.nexusmods.com/fallout4/mods/62985" target="_blank" style="color:var(--accent2)">Nexus Mods #62985</a></span></div>
+      <div class="info-row"><span>最新版本</span><span style="color:var(--accent2)">${llFix.version || '需 Nexus API Key'}</span></div>
+      ${llFix.error ? `<div class="info-row"><span>提示</span><span>${llFix.error}</span></div>` : ''}
+    </div>
+  `;
+
+  // 本地已知版本作为参考
+  const known = remote.known_latest || {};
+  html += `
+    <div class="remote-card" style="opacity:0.8">
+      <h3>📋 本地已知参考版本（离线后备）</h3>
+      <div class="info-row"><span>F4SE</span><span>${known.f4se?.version || '—'}（支持游戏 ${(known.f4se?.supported_game_versions || []).join(', ')}）</span></div>
+      <div class="info-row"><span>Address Library</span><span>匹配游戏版本 ${known.address_library?.version || '—'}</span></div>
+      <div class="info-row"><span>Long Loading Fix</span><span>${known.long_loading_fix?.version || '—'}</span></div>
+    </div>
+  `;
+
+  content.innerHTML = html;
+  section.classList.add('active');
+}
+
+/** 工具函数 */
+function hideAll() {
+  document.getElementById('error-msg').classList.remove('active');
+  document.getElementById('loading').classList.remove('active');
+  document.getElementById('summary').classList.remove('active');
+  document.getElementById('stats-bar').classList.remove('active');
+  document.getElementById('table-wrap').classList.remove('active');
+  document.getElementById('remote-section').classList.remove('active');
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = '❌ ' + msg;
+  el.classList.add('active');
+}
+</script>
+
+</body>
+</html>

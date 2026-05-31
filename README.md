@@ -10,8 +10,10 @@
 | `f4se_loader.exe` | 检测 F4SE 加载器 |
 | `f4se_*.dll` | 检测 F4SE DLL 版本是否匹配游戏版本 |
 | `version-*.bin` | 检测 Address Library 版本文件 |
-| `Long Loading Times Fix.dll` | 检测加载优化 MOD |
-| `Long Loading Times Fix.ini` | 检测加载优化配置文件 |
+| `LongLoadingTimesFix.dll` | 检测加载优化 MOD（兼容旧命名 `Long Loading Times Fix.dll`） |
+| `LongLoadingTimesFix.ini` | 检测加载优化配置文件（兼容旧命名 `Long Loading Times Fix.ini`） |
+| `f4se.log` | 检测 F4SE 日志中 LongLoadingTimesFix.dll 加载状态 |
+| `LongLoadingTimesFix.log` | 检测插件运行日志（辅助证据） |
 
 ## 快速开始
 

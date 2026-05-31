@@ -131,16 +131,16 @@ DETECTION_LIST = [
     {
         "id": "long_loading_dll",
         "category": "加载优化",
-        "name": "Long Loading Times Fix.dll",
-        "relative_path": "Data\\F4SE\\Plugins\\Long Loading Times Fix.dll",
+        "name": "Long Loading Times Fix (LongLoadingTimesFix.dll)",
+        "relative_path": "Data\\F4SE\\Plugins\\LongLoadingTimesFix.dll",
         "type": "file_exists",
         "required": True,
     },
     {
         "id": "long_loading_ini",
         "category": "加载优化",
-        "name": "Long Loading Times Fix.ini",
-        "relative_path": "Data\\F4SE\\Plugins\\Long Loading Times Fix.ini",
+        "name": "Long Loading Times Fix (LongLoadingTimesFix.ini)",
+        "relative_path": "Data\\F4SE\\Plugins\\LongLoadingTimesFix.ini",
         "type": "file_exists",
         "required": False,
     },
@@ -709,40 +709,137 @@ def api_scan():
     # 5. Address Library
     results.append(scan_address_library(game_path, game_version))
 
-    # 6. Long Loading Times Fix
-    results.append(scan_generic_file(game_path, {
-        "id": "long_loading_dll",
-        "name": "Long Loading Times Fix.dll",
-        "category": "加载优化",
-        "relative_path": "Data\\F4SE\\Plugins\\Long Loading Times Fix.dll",
-    }))
+    # ---- 6. Long Loading Times Fix (LongLoadingTimesFix.dll) ----
+    # 官方插件名为 LongLoadingTimesFix.dll，兼容旧命名 Long Loading Times Fix.dll
+    plugins_dir = os.path.join(game_path, "Data", "F4SE", "Plugins")
 
-    # 7. Long Loading Times Fix.ini
-    ini_path = os.path.join(game_path, "Data", "F4SE", "Plugins", "Long Loading Times Fix.ini")
-    ini_exists = os.path.isfile(ini_path)
-    ini_note = ""
-    if ini_exists:
-        # 尝试读取 ini 中的版本或说明
+    # 主检测路径（官方命名）
+    llfix_dll_primary = os.path.join(plugins_dir, "LongLoadingTimesFix.dll")
+    llfix_ini_primary = os.path.join(plugins_dir, "LongLoadingTimesFix.ini")
+    # 兼容旧命名 fallback
+    llfix_dll_fallback = os.path.join(plugins_dir, "Long Loading Times Fix.dll")
+    llfix_ini_fallback = os.path.join(plugins_dir, "Long Loading Times Fix.ini")
+
+    dll_exists = os.path.isfile(llfix_dll_primary)
+    dll_fallback_exists = os.path.isfile(llfix_dll_fallback)
+    ini_exists = os.path.isfile(llfix_ini_primary)
+    ini_fallback_exists = os.path.isfile(llfix_ini_fallback)
+
+    dll_path = llfix_dll_primary if dll_exists else (llfix_dll_fallback if dll_fallback_exists else llfix_dll_primary)
+    ini_path = llfix_ini_primary if ini_exists else (llfix_ini_fallback if ini_fallback_exists else llfix_ini_primary)
+    effective_dll_exists = dll_exists or dll_fallback_exists
+    effective_ini_exists = ini_exists or ini_fallback_exists
+
+    # ---- F4SE 日志检测 ----
+    userprofile = os.environ.get("USERPROFILE", "")
+    f4se_log_path = os.path.join(userprofile, "Documents", "My Games", "Fallout4", "F4SE", "f4se.log")
+    llfix_own_log_path = os.path.join(userprofile, "Documents", "My Games", "Fallout4", "F4SE", "LongLoadingTimesFix.log")
+
+    f4se_log_confirmed = False
+    if os.path.isfile(f4se_log_path):
+        try:
+            with open(f4se_log_path, "r", encoding="utf-8", errors="ignore") as fh:
+                log_content = fh.read()
+            if "LongLoadingTimesFix.dll" in log_content and "loaded correctly" in log_content:
+                f4se_log_confirmed = True
+        except Exception:
+            pass
+
+    llfix_own_log_exists = os.path.isfile(llfix_own_log_path)
+
+    # ---- 组装 DLL 检测结果 ----
+    dll_note_parts = []
+    if effective_dll_exists:
+        if dll_exists:
+            dll_note_parts.append("官方命名 LongLoadingTimesFix.dll")
+        elif dll_fallback_exists:
+            dll_note_parts.append("⚠ 使用旧命名 Long Loading Times Fix.dll，建议重命名为 LongLoadingTimesFix.dll")
+    else:
+        dll_note_parts.append("⚠ LongLoadingTimesFix.dll 未找到")
+
+    if f4se_log_confirmed:
+        dll_note_parts.append("✅ 已在 f4se.log 中确认插件加载成功")
+
+    dll_status = "ok" if effective_dll_exists else "missing"
+    if f4se_log_confirmed and not effective_dll_exists:
+        dll_status = "warning"
+        dll_note_parts.append("日志显示已加载但 DLL 文件未检测到")
+
+    results.append({
+        "id": "long_loading_dll",
+        "name": "Long Loading Times Fix (LongLoadingTimesFix.dll)",
+        "category": "加载优化",
+        "path": dll_path,
+        "exists": effective_dll_exists,
+        "current_version": None,
+        "expected_version": None,
+        "required": True,
+        "status": dll_status,
+        "note": " | ".join(dll_note_parts) if dll_note_parts else "",
+        "f4se_log_confirmed": f4se_log_confirmed,
+        "f4se_log_path": f4se_log_path,
+    })
+
+    # ---- 组装 INI 检测结果 ----
+    ini_note_parts = []
+    if effective_ini_exists:
+        if ini_exists:
+            ini_note_parts.append("官方命名 LongLoadingTimesFix.ini")
+        elif ini_fallback_exists:
+            ini_note_parts.append("⚠ 使用旧命名 Long Loading Times Fix.ini，建议重命名")
         try:
             with open(ini_path, "r", encoding="utf-8", errors="ignore") as fh:
                 content = fh.read(500)
-            # 简单检查是否有关键配置项
             if "EnableLog" in content or "LoadingScreen" in content or "FPS" in content:
-                ini_note = "ini 配置文件存在且包含配置项"
-            else:
-                ini_note = "ini 文件存在"
+                ini_note_parts.append("配置文件包含有效配置项")
         except Exception:
-            ini_note = "ini 存在但无法读取"
+            pass
+    else:
+        ini_note_parts.append("⚠ 配置文件缺失（非必需）")
+
     results.append({
         "id": "long_loading_ini",
-        "name": "Long Loading Times Fix.ini",
+        "name": "Long Loading Times Fix (LongLoadingTimesFix.ini)",
         "category": "加载优化",
         "path": ini_path,
-        "exists": ini_exists,
+        "exists": effective_ini_exists,
         "current_version": None,
         "expected_version": None,
-        "status": "ok" if ini_exists else "warning",
-        "note": ini_note if ini_exists else "⚠ 配置文件缺失（非必需）",
+        "required": False,
+        "status": "ok" if effective_ini_exists else "warning",
+        "note": " | ".join(ini_note_parts) if ini_note_parts else "",
+    })
+
+    # ---- LongLoadingTimesFix.log 存在性（辅助证据） ----
+    results.append({
+        "id": "long_loading_log",
+        "name": "LongLoadingTimesFix.log (辅助证据)",
+        "category": "加载优化",
+        "path": llfix_own_log_path,
+        "exists": llfix_own_log_exists,
+        "current_version": None,
+        "expected_version": None,
+        "required": False,
+        "status": "ok" if llfix_own_log_exists else "warning",
+        "note": "插件运行日志存在，表明插件曾成功运行" if llfix_own_log_exists else "⚠ 日志文件不存在（非必需）",
+    })
+
+    # ---- f4se.log 存在性 ----
+    f4se_log_exists = os.path.isfile(f4se_log_path)
+    results.append({
+        "id": "f4se_log",
+        "name": "f4se.log (F4SE 日志)",
+        "category": "加载优化",
+        "path": f4se_log_path,
+        "exists": f4se_log_exists,
+        "current_version": None,
+        "expected_version": None,
+        "required": False,
+        "status": "ok" if f4se_log_exists else "warning",
+        "note": (
+            "F4SE 日志存在" + ("，LongLoadingTimesFix.dll 加载确认" if f4se_log_confirmed else "")
+        ) if f4se_log_exists else "⚠ F4SE 日志不存在（非必需）",
+        "f4se_llfix_confirmed": f4se_log_confirmed,
     })
 
     # ---- 远程版本抓取 ----
@@ -772,7 +869,7 @@ def api_scan():
             r["remote_latest_version"] = f4se_remote_for_current
         elif r["id"] in ("address_library_bin", "address_library_dll"):
             r["remote_latest_version"] = addr_remote_ver or remote["known_latest"]["address_library"]["version"]
-        elif r["id"] in ("long_loading_dll", "long_loading_ini"):
+        elif r["id"] in ("long_loading_dll", "long_loading_ini", "long_loading_log", "f4se_log"):
             r["remote_latest_version"] = llfix_remote_ver or remote["known_latest"]["long_loading_fix"]["version"]
         else:
             r["remote_latest_version"] = None  # Fallout4.exe

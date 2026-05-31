@@ -324,6 +324,7 @@
           <th>存在</th>
           <th>当前版本</th>
           <th>期望版本</th>
+          <th>远程最新版本</th>
           <th>状态</th>
           <th>说明</th>
         </tr>
@@ -508,6 +509,10 @@ function renderResults(data) {
       ? `<span class="ver-current">${r.expected_version}</span>`
       : '<span style="color:var(--text-dim)">—</span>';
 
+    let remoteVerHtml = r.remote_latest_version
+      ? `<span class="ver-current" style="color:var(--accent2)">${r.remote_latest_version}</span>`
+      : '<span style="color:var(--text-dim)">—</span>';
+
     // 如果有找到的文件列表
     let foundInfo = '';
     if (r.found_files && r.found_files.length > 0) {
@@ -521,6 +526,7 @@ function renderResults(data) {
       <td><span class="${existsClass}">${existsLabel}</span></td>
       <td>${currentVerHtml}</td>
       <td>${expectedVerHtml}</td>
+      <td>${remoteVerHtml}</td>
       <td><span class="badge ${statusBadgeClass}">${statusLabel}</span></td>
       <td style="font-size:0.85em">${r.note || ''}</td>
     `;
@@ -541,12 +547,18 @@ function renderRemote(remote, gameVersion) {
 
   // F4SE
   const f4se = remote.f4se || {};
+  const mappings = f4se.version_mappings || {};
+  const mappingLines = Object.entries(mappings).map(([gv, fv]) =>
+    `${gv} → F4SE ${fv}`
+  ).join(', ') || (f4se.supported_game_versions || []).join(', ') || '—';
+
   html += `
     <div class="remote-card">
       <h3>🔧 F4SE (Fallout 4 Script Extender)</h3>
       <div class="info-row"><span>数据来源</span><span>${f4se.source || '—'}</span></div>
-      <div class="info-row"><span>最新版本</span><span style="color:var(--accent2)">${f4se.f4se_version || '获取失败'}</span></div>
-      <div class="info-row"><span>支持游戏版本</span><span>${(f4se.supported_game_versions || []).join(', ') || '—'}</span></div>
+      <div class="info-row"><span>最新 F4SE</span><span style="color:var(--accent2)">${f4se.latest_f4se || f4se.f4se_version || '获取失败'}</span></div>
+      <div class="info-row"><span>最新支持游戏版本</span><span style="color:var(--accent2)">${f4se.latest_game_version || '—'}</span></div>
+      <div class="info-row"><span>版本映射</span><span style="font-size:0.8em">${mappingLines}</span></div>
       ${f4se.error ? `<div class="info-row"><span>错误</span><span style="color:var(--err)">${f4se.error}</span></div>` : ''}
     </div>
   `;
@@ -567,7 +579,7 @@ function renderRemote(remote, gameVersion) {
   html += `
     <div class="remote-card">
       <h3>⏱ Long Loading Times Fix</h3>
-      <div class="info-row"><span>Nexus 页面</span><span><a href="https://www.nexusmods.com/fallout4/mods/62985" target="_blank" style="color:var(--accent2)">Nexus Mods #62985</a></span></div>
+      <div class="info-row"><span>Nexus 页面</span><span><a href="https://www.nexusmods.com/fallout4/mods/73469" target="_blank" style="color:var(--accent2)">Nexus Mods #73469</a></span></div>
       <div class="info-row"><span>最新版本</span><span style="color:var(--accent2)">${llFix.version || '需 Nexus API Key'}</span></div>
       ${llFix.error ? `<div class="info-row"><span>提示</span><span>${llFix.error}</span></div>` : ''}
     </div>
@@ -575,10 +587,15 @@ function renderRemote(remote, gameVersion) {
 
   // 本地已知版本作为参考
   const known = remote.known_latest || {};
+  const knownMappings = known.f4se?.version_mappings || {};
+  const knownMappingStr = Object.entries(knownMappings).map(([gv, fv]) =>
+    `${gv} → F4SE ${fv}`
+  ).join(', ') || '—';
+
   html += `
     <div class="remote-card" style="opacity:0.8">
       <h3>📋 本地已知参考版本（离线后备）</h3>
-      <div class="info-row"><span>F4SE</span><span>${known.f4se?.version || '—'}（支持游戏 ${(known.f4se?.supported_game_versions || []).join(', ')}）</span></div>
+      <div class="info-row"><span>F4SE 版本映射</span><span style="font-size:0.8em">${knownMappingStr}</span></div>
       <div class="info-row"><span>Address Library</span><span>匹配游戏版本 ${known.address_library?.version || '—'}</span></div>
       <div class="info-row"><span>Long Loading Fix</span><span>${known.long_loading_fix?.version || '—'}</span></div>
     </div>

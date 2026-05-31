@@ -27,16 +27,17 @@ from flask import Flask, request, jsonify, send_from_directory
 # 配置
 # ---------------------------------------------------------------------------
 
-# Nexus Mods 已知 Mod ID（可在此处更新）
+# Nexus Mods 已知 Mod ID
 NEXUS_MOD_IDS = {
     "address_library": 47327,       # Address Library for F4SE Plugins
-    "long_loading_fix": 62985,      # Long Loading Times Fix (请核实)
+    "long_loading_fix": 73469,      # Long Loading Times Fix
 }
 
 # 已知的 Fallout 4 版本与对应 F4SE 版本映射
 KNOWN_FO4_VERSIONS = {
-    "1.11.221": "0.7.2",   # Next-gen update (2024)
+    "1.11.221": "0.7.8",   # Next-gen update (2024) - F4SE 0.7.8
     "1.11.191": "0.6.23",  # Pre-next-gen
+    "1.10.984": "0.7.2",   # Pre-next-gen (second latest)
     "1.10.163": "0.6.23",  # Older
     "1.10.162": "0.6.21",
     "1.10.138": "0.6.19",
@@ -399,10 +400,14 @@ def scan_generic_file(game_path: str, item: dict) -> dict:
 def fetch_f4se_latest() -> dict:
     """
     从 https://f4se.silverlock.org/ 抓取最新 F4SE 版本信息。
+    解析格式: "Fallout 4 runtime <game_version> - build: <f4se_version>"
+    返回 version_mappings 字典，包含多个 game_version → f4se_version 映射。
     """
     result = {
         "source": "https://f4se.silverlock.org/",
-        "f4se_version": None,
+        "version_mappings": {},       # {game_version: f4se_version, ...}
+        "latest_f4se": None,
+        "latest_game_version": None,
         "supported_game_versions": [],
         "success": False,
         "error": None,
@@ -414,26 +419,56 @@ def fetch_f4se_latest() -> dict:
         soup = BeautifulSoup(resp.text, "html.parser")
         text = soup.get_text()
 
-        # 提取 F4SE 版本号，如 "Current build: v0.7.2"
-        m = re.search(r"Current\s+(?:build|version)[:\s]+v?(\d+\.\d+\.\d+)", text, re.IGNORECASE)
-        if m:
-            result["f4se_version"] = m.group(1)
+        # 尝试解析 "Fallout 4 runtime <version> - build: <f4se_version>" 格式
+        # 匹配示例: "Fallout 4 runtime 1.11.221 - build: 0.7.8"
+        runtime_pattern = re.compile(
+            r'Fallout\s*4\s+runtime\s+(\d+\.\d+\.\d+)\s*[-–—]\s*build:\s*v?(\d+\.\d+\.\d+)',
+            re.IGNORECASE
+        )
+        for m in runtime_pattern.finditer(text):
+            game_ver = m.group(1)
+            f4se_ver = m.group(2)
+            result["version_mappings"][game_ver] = f4se_ver
 
-        # 提取支持的游戏版本，如 "1.11.221", "1.11.191"
-        game_versions = re.findall(r"(\d+\.\d+\.\d+)", text)
-        # 去重并过滤 F4SE 自身版本
-        seen = set()
-        unique_versions = []
-        for v in game_versions:
-            if v not in seen and v != result.get("f4se_version", ""):
-                seen.add(v)
-                unique_versions.append(v)
-        result["supported_game_versions"] = unique_versions
+        # 后备: 旧格式 "Current build: v0.7.8" + 单独的版本号列表
+        if not result["version_mappings"]:
+            # 提取 F4SE 构建号
+            m = re.search(
+                r'Current\s+(?:build|version)[:\s]+v?(\d+\.\d+\.\d+)',
+                text, re.IGNORECASE
+            )
+            f4se_ver = m.group(1) if m else None
 
-        if result["f4se_version"]:
+            # 提取所有 game 版本号
+            game_versions = re.findall(r'(\d+\.\d+\.\d+)', text)
+            seen = set()
+            unique_game_versions = []
+            for v in game_versions:
+                if v not in seen and v != f4se_ver:
+                    seen.add(v)
+                    unique_game_versions.append(v)
+
+            # 猜测: 最新 F4SE 对应最新 game version
+            if unique_game_versions and f4se_ver:
+                for gv in unique_game_versions:
+                    result["version_mappings"][gv] = f4se_ver
+                result["latest_f4se"] = f4se_ver
+                result["latest_game_version"] = unique_game_versions[0]
+
+        if result["version_mappings"]:
             result["success"] = True
+            # 推断最新版本（第一个映射通常是最新的）
+            sorted_versions = sorted(
+                result["version_mappings"].keys(),
+                key=lambda v: tuple(int(x) for x in v.split(".")),
+                reverse=True
+            )
+            if sorted_versions:
+                result["latest_game_version"] = sorted_versions[0]
+                result["latest_f4se"] = result["version_mappings"][sorted_versions[0]]
+            result["supported_game_versions"] = sorted_versions
         else:
-            result["error"] = "无法解析 F4SE 版本信息"
+            result["error"] = "无法解析 F4SE 版本信息（格式可能已变更）"
 
     except requests.RequestException as exc:
         result["error"] = f"网络请求失败: {exc}"
@@ -447,9 +482,9 @@ def fetch_f4se_latest() -> dict:
 
 def fetch_nexus_mod_info(mod_id: int) -> dict:
     """
-    尝试通过 Nexus Mods API 获取 Mod 信息。
-    需要用户在环境变量 NEXUS_API_KEY 中设置 API Key（可选）。
-    如果无 API Key，返回基础信息。
+    获取 Nexus Mods 上的 Mod 版本信息。
+    优先使用 NEXUS_API_KEY 调用 Nexus API；
+    如果没有 API Key，则抓取 Nexus HTML 页面解析 Version 字段。
     """
     result = {
         "source": f"https://www.nexusmods.com/fallout4/mods/{mod_id}",
@@ -457,51 +492,134 @@ def fetch_nexus_mod_info(mod_id: int) -> dict:
         "name": None,
         "version": None,
         "updated_date": None,
+        "method": None,      # "api" or "html_scrape"
         "success": False,
         "error": None,
     }
 
     api_key = os.environ.get("NEXUS_API_KEY", "")
-    if not api_key:
-        result["error"] = "未配置 NEXUS_API_KEY（可选，将使用本地已知版本）"
-        return result
 
+    # ---- 方法 1: Nexus API（需要 API Key）----
+    if api_key:
+        try:
+            headers = {"apikey": api_key, "Accept": "application/json"}
+            url = f"https://api.nexusmods.com/v1/games/fallout4/mods/{mod_id}.json"
+            resp = requests.get(url, headers=headers, timeout=15)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                result["name"] = data.get("name")
+                result["version"] = data.get("version")
+                result["updated_date"] = data.get("updated_time") or data.get("updated_timestamp")
+                result["method"] = "api"
+                result["success"] = True
+                return result
+            elif resp.status_code == 401:
+                log.warning("Nexus API key invalid, falling back to HTML scrape")
+            elif resp.status_code == 404:
+                result["error"] = f"Mod ID {mod_id} 未找到"
+                return result
+            else:
+                log.warning("Nexus API returned HTTP %s, falling back to HTML", resp.status_code)
+        except requests.RequestException as exc:
+            log.warning("Nexus API request failed: %s, falling back to HTML", exc)
+        except Exception as exc:
+            log.warning("Nexus API parse failed: %s, falling back to HTML", exc)
+
+    # ---- 方法 2: HTML 页面抓取（无需 API Key）----
     try:
-        headers = {"apikey": api_key, "Accept": "application/json"}
-        url = f"https://api.nexusmods.com/v1/games/fallout4/mods/{mod_id}.json"
-        resp = requests.get(url, headers=headers, timeout=15)
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        resp = requests.get(result["source"], headers=headers, timeout=20)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
 
-        if resp.status_code == 200:
-            data = resp.json()
-            result["name"] = data.get("name")
-            result["version"] = data.get("version")
-            result["updated_date"] = data.get("updated_time") or data.get("updated_timestamp")
+        # 尝试多种常见 Version 字段格式:
+        # 格式 1: <dt>Version</dt><dd>1.2.0</dd>
+        version_dt = soup.find("dt", string=re.compile(r"^\s*Version\s*$", re.IGNORECASE))
+        if version_dt and version_dt.find_next("dd"):
+            result["version"] = version_dt.find_next("dd").get_text(strip=True)
+
+        # 格式 2: <span class="stat">Version</span> ... <span>1.2.0</span>
+        if not result["version"]:
+            for stat in soup.find_all(["div", "span"], class_=re.compile(r"stat", re.I)):
+                text = stat.get_text(strip=True)
+                m = re.match(r"Version\s*(.+)", text, re.IGNORECASE)
+                if m:
+                    result["version"] = m.group(1).strip()
+                    break
+
+        # 格式 3: 在 inline JSON/JS 中搜索 "version":"x.y.z"
+        if not result["version"]:
+            for script in soup.find_all("script"):
+                if script.string:
+                    m = re.search(r'"version"\s*:\s*"([^"]+)"', script.string)
+                    if m:
+                        result["version"] = m.group(1)
+                        break
+
+        # 格式 4: meta 标签
+        if not result["version"]:
+            meta = soup.find("meta", {"name": re.compile(r"version", re.I)})
+            if meta and meta.get("content"):
+                result["version"] = meta.get("content")
+
+        # 格式 5: 页面标题中提取版本号，如 "Mod Name 1.2.0"
+        if not result["version"]:
+            title = soup.find("title")
+            if title:
+                title_text = title.get_text(strip=True)
+                m = re.search(r'(\d+\.\d+(?:\.\d+)?)\s*(?:at|$)', title_text)
+                if m:
+                    result["version"] = m.group(1)
+
+        # 提取 Mod 名称
+        title_tag = soup.find("title")
+        if title_tag:
+            name = title_tag.get_text(strip=True)
+            # 清理 " at Fallout 4 Nexus" 等后缀
+            name = re.sub(r'\s*(?:at|-)+\s*Fallout\s*4\s*Nexus.*$', '', name, flags=re.IGNORECASE).strip()
+            result["name"] = name
+
+        if result["version"]:
+            result["method"] = "html_scrape"
             result["success"] = True
-        elif resp.status_code == 401:
-            result["error"] = "API Key 无效"
-        elif resp.status_code == 404:
-            result["error"] = f"Mod ID {mod_id} 未找到"
-        else:
-            result["error"] = f"HTTP {resp.status_code}"
+        elif not result["error"]:
+            result["error"] = "HTML 页面中未找到 Version 字段（页面结构可能已变更）"
 
     except requests.RequestException as exc:
-        result["error"] = f"网络请求失败: {exc}"
-        log.warning("Nexus API fetch failed for mod %s: %s", mod_id, exc)
+        if not result["error"]:
+            result["error"] = f"网络请求失败: {exc}"
+        log.warning("Nexus HTML fetch failed for mod %s: %s", mod_id, exc)
     except Exception as exc:
-        result["error"] = f"解析失败: {exc}"
+        if not result["error"]:
+            result["error"] = f"解析失败: {exc}"
+        log.warning("Nexus HTML parse failed for mod %s: %s", mod_id, exc)
 
     return result
 
 
 def get_known_latest() -> dict:
     """
-    返回已知的最新版本信息（本地维护，作为在线抓取的后备）。
-    这些数据需要随 MOD 更新而手动维护。
+    返回本地维护的已知最新版本（作为在线抓取的后备参考）。
+    数据需随 MOD 更新而手动维护。
     """
     return {
         "f4se": {
-            "version": "0.7.2",
-            "supported_game_versions": ["1.11.221", "1.11.191"],
+            "version_mappings": {
+                "1.11.221": "0.7.8",
+                "1.10.984": "0.7.2",
+                "1.10.163": "0.6.23",
+            },
+            "latest_f4se": "0.7.8",
+            "latest_game_version": "1.11.221",
             "source": "local",
         },
         "address_library": {
@@ -510,7 +628,7 @@ def get_known_latest() -> dict:
             "source": "local",
         },
         "long_loading_fix": {
-            "version": "1.2.0",  # 请根据实际情况更新
+            "version": "1.2.0",     # 请根据实际最新版本更新
             "mod_id": NEXUS_MOD_IDS["long_loading_fix"],
             "source": "local",
         },
@@ -625,6 +743,28 @@ def api_scan():
     # 始终提供本地已知版本作为参考
     remote["known_latest"] = get_known_latest()
 
+    # ---- 将远程版本注入检测结果 ----
+    # F4SE 远程推荐版本（针对当前游戏版本）
+    f4se_remote_data = remote.get("f4se", {})
+    f4se_mappings = f4se_remote_data.get("version_mappings", {})
+    f4se_remote_for_current = f4se_mappings.get(game_version) if game_version else None
+    # 后备: 使用本地已知映射
+    if not f4se_remote_for_current and game_version:
+        f4se_remote_for_current = KNOWN_FO4_VERSIONS.get(game_version)
+
+    addr_remote_ver = remote.get("address_library", {}).get("version")
+    llfix_remote_ver = remote.get("long_loading_fix", {}).get("version")
+
+    for r in results:
+        if r["id"] in ("f4se_loader", "f4se_dll", "f4se_steam_loader"):
+            r["remote_latest_version"] = f4se_remote_for_current
+        elif r["id"] in ("address_library_bin", "address_library_dll"):
+            r["remote_latest_version"] = addr_remote_ver or remote["known_latest"]["address_library"]["version"]
+        elif r["id"] in ("long_loading_dll", "long_loading_ini"):
+            r["remote_latest_version"] = llfix_remote_ver or remote["known_latest"]["long_loading_fix"]["version"]
+        else:
+            r["remote_latest_version"] = None  # Fallout4.exe
+
     # ---- 整体状态摘要 ----
     missing = [r for r in results if r["status"] == "missing"]
     mismatches = [r for r in results if r["status"] == "mismatch"]
@@ -648,16 +788,16 @@ def api_scan():
     else:
         summary = "⚠ 存在警告项，建议检查"
 
-    # 升级/回退建议
+    # 升级/回退建议（优先使用远程数据）
     recommendation = ""
-    if game_version and game_version in KNOWN_FO4_VERSIONS:
-        recommended_f4se = KNOWN_FO4_VERSIONS[game_version]
-        # 检查当前 F4SE DLL 版本
+    effective_f4se = f4se_remote_for_current or (KNOWN_FO4_VERSIONS.get(game_version) if game_version else None)
+
+    if game_version and effective_f4se:
         f4se_dll_result = next((r for r in results if r["id"] == "f4se_dll"), None)
         if f4se_dll_result and f4se_dll_result["status"] != "ok":
-            recommendation = f"建议安装/更新 F4SE 至版本 {recommended_f4se}（匹配游戏版本 {game_version}）"
-        elif not recommendation:
-            recommendation = f"当前游戏版本 {game_version}，推荐 F4SE {recommended_f4se}"
+            recommendation = f"建议安装/更新 F4SE 至版本 {effective_f4se}（匹配游戏版本 {game_version}）"
+        else:
+            recommendation = f"当前游戏版本 {game_version}，推荐 F4SE {effective_f4se}"
     elif game_version:
         recommendation = f"游戏版本 {game_version} 不在已知映射中，建议手动检查 F4SE 兼容性"
 
